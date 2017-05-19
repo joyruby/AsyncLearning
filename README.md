@@ -13,8 +13,11 @@ doInBackground(新线程) -->onPostExecute
 onProgressUpdate会在doInBackground过程中调用，但是它执行在ui线程中
 
 ---
-如果把上面的看做需求，该如何实现？
+如果把上面的看做需求，改如何实现？
 
+version1 对应代码AsyncTask；
+
+version2 对应代码AsyncTaskS;
 ## version 1
 1. 四个函数的调用其实是ui线程和另外一个线程来回切换过程，必然想到用Handler实现。
 2. 新的线程可以用 new Thread（）来实现
@@ -29,7 +32,7 @@ class InternalHandler extends Handler{
     
         switch (msg.what)
             case MESSAGE_POST_RESULT:
-                onPostExecute(参数4);
+                onPostExecute(参数1);
                 break;
             case MESSAGE_POST_PROGRESS:
                 onProgressUpdate(参数3);
@@ -44,8 +47,8 @@ new Thread(new Runnable(){
     mHandler.obtainMessage(MESSAGE_POST_RESULT,参数1).sendToTarget();
 }).start()
 
-publishProgress(参数5) {
-        mHandler.obtainMessage(MESSAGE_POST_PROGRESS,参数5).sendToTarget();
+publishProgress(参数3) {
+        mHandler.obtainMessage(MESSAGE_POST_PROGRESS,参数3).sendToTarget();
     }
 ```
 ### 参数定义
@@ -71,8 +74,6 @@ public AsyncTask<Param,Progress,Result>{
 参数1 | Result
 参数2 | Params
 参数3 | Progress
-参数4 | Result
-参数5 | Progress
 
 ---
 
@@ -96,6 +97,74 @@ class AsyncResult<Data>{
 在这里 Data类型对应Result，Progress两种类型。
 
 关于这个版本，相信经常写java的人，只要了解需求，很快就能实现。
+
+---
+## version2
+1. 在版本1的基础上，加入线程管理
+2. 使用ThreadPoolExecutor替换Thread,
+3. 封装ThreadPoolExecutor，实现线程的串行
+
+---
+### ThreadPoolExecutor的定义：
+
+```
+//use ThreadPoolExecutor replace Thread
+    private static final int CORE_SIZE = 5;
+    private static final int CORE_MAX_SIZE = 128;
+    private static final int KEEP_LIVE =1;
+
+    private static final BlockingDeque<Runnable> mblockingDeque = new LinkedBlockingDeque<Runnable>();
+
+    private static final ThreadPoolExecutor mDefaultThread =
+            new ThreadPoolExecutor(CORE_SIZE,CORE_MAX_SIZE,KEEP_LIVE, TimeUnit.SECONDS,mblockingDeque,new ThreadFactory(){
+
+                @Override
+                public Thread newThread(@NonNull Runnable r) {
+                    return new Thread(r);
+                }
+            });
+```
+
+### SerialExecute（串行）
+
+```
+private static class SerialExecute implements Executor{
+        ArrayDeque<Runnable> arrayDeque = new ArrayDeque<Runnable>();
+        Runnable mActive;
+        @Override
+        public synchronized void execute(@NonNull final Runnable command) {
+            arrayDeque.offer(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        command.run();
+                    }finally {
+                        sheduleNext();
+                    }
+                }
+            });
+            if(mActive == null){
+                sheduleNext();
+            }
+        }
+
+        public synchronized void sheduleNext(){
+            if((mActive = arrayDeque.poll()) != null){
+                mDefaultThread.execute(mActive);
+            }
+        }
+    }
+```
+
+
+---
+
+
+
+
+
+
+
 
 
 
